@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.tmp/
+agent-council-runs/
+agent-order-runs/
+.claude/
+.agents/
+skills-lock.json
+
+# HyperFrames working projects: generated media, preview thumbnails, draft renders.
+# Keep durable README/OG media in docs/assets/ instead.
+docs/showcase-video/
+docs/**/.thumbnails/
+docs/**/renders/

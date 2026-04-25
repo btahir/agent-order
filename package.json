@@ -1,0 +1,51 @@
+{
+  "name": "agent-order",
+  "version": "0.1.0",
+  "description": "The Order of the Agents — AI peer review for decisions that matter. Codex, Claude, and other agents deliberate, critique, and issue a decree.",
+  "type": "module",
+  "author": "Bilal Tahir",
+  "keywords": [
+    "ai",
+    "agents",
+    "codex",
+    "claude",
+    "cli",
+    "review",
+    "prd",
+    "decision-making"
+  ],
+  "bin": {
+    "agent-order": "./dist/bin/agent-order.js"
+  },
+  "types": "./dist/src/types.d.ts",
+  "files": [
+    "dist/bin",
+    "dist/src",
+    "README.md",
+    "examples",
+    "docs/assets"
+  ],
+  "scripts": {
+    "build": "tsc && chmod +x dist/bin/agent-order.js",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check",
+    "pack:dry": "npm pack --dry-run",
+    "check": "npm run build && node dist/bin/agent-order.js --help && node dist/bin/agent-order.js check --config examples/mock.config.yaml",
+    "demo": "npm run build && node dist/bin/agent-order.js \"Plan a saved-search feature for a project management app. Include UX, data model, API, rollout risks, and acceptance criteria.\" --config examples/mock.config.yaml --out .tmp/demo-runs --max-turns 9",
+    "smoke:real": "npm run build && node dist/bin/agent-order.js \"Plan a saved-search feature for a project management app. Include UX, data model, API, rollout risks, and acceptance criteria.\" --agents codex,claude --out .tmp/real-runs --max-turns 3 --human-input never --no-final-review"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT"
+}

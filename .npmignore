@@ -1,0 +1,13 @@
+node_modules/
+src/
+bin/*.ts
+scripts/*.ts
+.tmp/
+agent-council-runs/
+agent-order-runs/
+.agents/
+.claude/
+skills-lock.json
+docs/showcase-video/
+docs/**/.thumbnails/
+docs/**/renders/

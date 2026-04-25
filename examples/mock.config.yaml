@@ -1,0 +1,30 @@
+protocol: agent-order/v1
+
+agents:
+  - id: alpha
+    adapter: generic-cli
+    command: node
+    args:
+      - dist/scripts/mock-agent.js
+    check_args:
+      - --version
+
+  - id: beta
+    adapter: generic-cli
+    command: node
+    args:
+      - dist/scripts/mock-agent.js
+    check_args:
+      - --version
+
+limits:
+  max_turns: 9
+
+output:
+  dir: ./.tmp/mock-runs
+
+synthesis:
+  agent: alpha
+
+final_review:
+  enabled: true
