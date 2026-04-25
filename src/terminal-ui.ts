@@ -31,13 +31,13 @@ export function createTerminalTheme({ color = process.stderr.isTTY }: { color?: 
 export function formatEvent(message: string, theme = createTerminalTheme()): string {
   if (message.startsWith("Run directory:")) {
     const value = message.slice("Run directory:".length).trim();
-    return `${theme.muted("Run")} ${theme.accent(value)}`;
+    return `${theme.muted("run")}  ${theme.accent(toRelativePath(value))}`;
   }
 
   const turn = message.match(/^Turn\s+([^:]+):\s+(\S+)\s+(.+)$/);
   if (turn) {
     const [, id, actor, phase] = turn;
-    return `${theme.muted("Turn")} ${theme.accent(id)} ${theme.label(actor)} ${theme.muted(formatPhase(phase))}`;
+    return `  ${theme.muted("·")}  ${theme.muted(id)}  ${theme.label(actor.padEnd(8))}  ${theme.muted(formatPhase(phase))}`;
   }
 
   return theme.muted(message);
@@ -53,24 +53,29 @@ export function createTerminalReporter({
   const theme = createTerminalTheme({ color });
   const interactive = Boolean(output.isTTY);
   const width = Math.max(48, Math.min(output.columns ?? 88, 120));
-  const frames = ["|", "/", "-", "\\"];
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const verbs = ["consulting", "weighing", "challenging", "revising", "synthesizing", "inscribing"];
   let timer: NodeJS.Timeout | null = null;
   let frame = 0;
   let verbIndex = 0;
   let active: { id: string; actor: string; phase: string; startedAt: number } | null = null;
   let lineVisible = false;
+  let lastPhase: string | null = null;
+  const headerIndent = "  ";
+  const bodyIndent = "     ";
 
   function event(message: string): void {
     if (message.startsWith("Input requested:")) {
       stopSpinner();
+      lastPhase = null;
       return;
     }
 
     if (message.startsWith("Run directory:")) {
       stopSpinner();
       const value = message.slice("Run directory:".length).trim();
-      writeLine(`${theme.muted("Run")} ${wrapPath(value, width - 4, theme)}`);
+      writeLine("");
+      writeLine(`${headerIndent}${theme.muted("run")}  ${theme.accent(toRelativePath(value))}`);
       return;
     }
 
@@ -78,12 +83,11 @@ export function createTerminalReporter({
     if (turn) {
       stopSpinner();
       const [, id, actor, phase] = turn;
+      writePhaseHeaderIfNew(phase);
       active = { id, actor, phase, startedAt: Date.now() };
       if (interactive) {
         renderSpinner();
         timer = setInterval(renderSpinner, 100);
-      } else {
-        writeLine(formatEvent(message, theme));
       }
       return;
     }
@@ -93,7 +97,8 @@ export function createTerminalReporter({
       const [, id, actor, phase] = done;
       const elapsed = active && active.id === id ? elapsedSeconds(active.startedAt) : "";
       stopSpinner();
-      writeLine(`${theme.success("✓")} ${theme.accent(id)} ${theme.label(actor)} ${theme.muted(formatPhase(phase))}${elapsed ? theme.muted(` ${elapsed}`) : ""}`);
+      writePhaseHeaderIfNew(phase);
+      writeLine(`${bodyIndent}${theme.success("✓")}  ${theme.muted(id)}  ${theme.label(actor.padEnd(8))}${elapsed ? `  ${theme.muted(elapsed)}` : ""}`);
       active = null;
       return;
     }
@@ -108,8 +113,22 @@ export function createTerminalReporter({
 
   function finalPath(value: string): void {
     stopSpinner();
+    writePhaseHeader("final report");
+    writeLine(`${bodyIndent}${theme.accent("→")}  ${theme.accent(toRelativePath(value))}`);
     writeLine("");
-    writeLine(`${theme.success("Final report")} ${wrapPath(value, width - 13, theme)}`);
+  }
+
+  function writePhaseHeaderIfNew(phase: string): void {
+    const label = formatPhase(phase);
+    if (label === lastPhase) return;
+    lastPhase = label;
+    writePhaseHeader(label);
+  }
+
+  function writePhaseHeader(label: string): void {
+    writeLine("");
+    writeLine(`${headerIndent}${theme.accent("▎")} ${theme.label(label)}`);
+    writeLine("");
   }
 
   function renderSpinner(): void {
@@ -119,7 +138,7 @@ export function createTerminalReporter({
     frame += 1;
     verbIndex += 1;
     const elapsed = elapsedSeconds(active.startedAt);
-    const text = `${theme.accent(currentFrame)} ${theme.label(active.actor)} ${theme.muted(formatPhase(active.phase))} ${theme.accent(verb)} ${theme.muted(elapsed)}`;
+    const text = `${bodyIndent}${theme.accent(currentFrame)}  ${theme.muted(active.id)}  ${theme.label(active.actor.padEnd(8))}  ${theme.muted(verb)}  ${theme.muted(elapsed)}`;
     const line = truncateForTerminal(text, width);
     output.write(`\r\x1b[2K${line}`);
     lineVisible = true;
@@ -141,6 +160,13 @@ export function createTerminalReporter({
   }
 
   return { event, finalPath, finish };
+}
+
+function toRelativePath(value: string): string {
+  const cwd = process.cwd();
+  if (value === cwd) return ".";
+  if (value.startsWith(cwd + "/")) return value.slice(cwd.length + 1);
+  return value;
 }
 
 export function formatQuestionBlock({
@@ -169,19 +195,22 @@ export function formatQuestionBlock({
 
   if (question.why_it_matters) {
     lines.push(`${theme.label("Why it matters")}`);
-    lines.push(wrapText(question.why_it_matters, 84, "  "));
+    lines.push("");
+    lines.push(wrapText(question.why_it_matters, 84));
     lines.push("");
   }
 
   if (question.recommended_answer) {
     lines.push(`${theme.label("Recommended")}`);
-    lines.push(wrapText(question.recommended_answer, 84, "  "));
+    lines.push("");
+    lines.push(wrapText(question.recommended_answer, 84));
     lines.push("");
   }
 
   if (question.source_turn || question.source_actor) {
     const source = [question.source_actor, question.source_turn].filter(Boolean).join(".");
     lines.push(theme.muted(`Source: ${source}`));
+    lines.push("");
   }
 
   lines.push(theme.muted(helpText({ allowDone, defaultToRecommendation })));
@@ -197,7 +226,7 @@ export function formatPrompt({
   defaultToRecommendation: boolean;
   theme: TerminalTheme;
 }): string {
-  return `${theme.prompt("Your answer")}\n${theme.accent(">")} `;
+  return `\n${theme.prompt("Your answer")}\n\n${theme.accent(">")} `;
 }
 
 function formatPhase(phase: string): string {
@@ -206,31 +235,6 @@ function formatPhase(phase: string): string {
 
 function elapsedSeconds(startedAt: number): string {
   return `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
-}
-
-function wrapPath(value: string, width: number, theme: TerminalTheme): string {
-  if (stripAnsi(value).length <= width) return theme.accent(value);
-  const parts = value.split("/");
-  const lines: string[] = [];
-  let current = "";
-
-  for (const part of parts) {
-    const next = current ? joinPathDisplay(current, part) : part || "/";
-    if (stripAnsi(next).length > width && current) {
-      lines.push(current);
-      current = part;
-    } else {
-      current = next;
-    }
-  }
-
-  if (current) lines.push(current);
-  return lines.map((line, index) => index === 0 ? theme.accent(line) : `    ${theme.accent(line)}`).join("\n");
-}
-
-function joinPathDisplay(current: string, part: string): string {
-  if (current === "/") return `/${part}`;
-  return `${current}/${part}`;
 }
 
 function truncateForTerminal(value: string, width: number): string {
