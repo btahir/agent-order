@@ -55,7 +55,7 @@ Then run:
 agent-order "Should we build or buy an internal analytics dashboard?"
 ```
 
-After publishing, the intended zero-install path is:
+For zero-install use:
 
 ```bash
 npx agent-order@latest ./scenario.md
