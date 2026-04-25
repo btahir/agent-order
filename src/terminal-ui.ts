@@ -43,6 +43,106 @@ export function formatEvent(message: string, theme = createTerminalTheme()): str
   return theme.muted(message);
 }
 
+export function createTerminalReporter({
+  output = process.stderr,
+  color = Boolean(process.stderr.isTTY)
+}: {
+  output?: NodeJS.WritableStream & { columns?: number; isTTY?: boolean };
+  color?: boolean;
+} = {}) {
+  const theme = createTerminalTheme({ color });
+  const interactive = Boolean(output.isTTY);
+  const width = Math.max(48, Math.min(output.columns ?? 88, 120));
+  const frames = ["|", "/", "-", "\\"];
+  const verbs = ["consulting", "weighing", "challenging", "revising", "synthesizing", "inscribing"];
+  let timer: NodeJS.Timeout | null = null;
+  let frame = 0;
+  let verbIndex = 0;
+  let active: { id: string; actor: string; phase: string; startedAt: number } | null = null;
+  let lineVisible = false;
+
+  function event(message: string): void {
+    if (message.startsWith("Input requested:")) {
+      stopSpinner();
+      return;
+    }
+
+    if (message.startsWith("Run directory:")) {
+      stopSpinner();
+      const value = message.slice("Run directory:".length).trim();
+      writeLine(`${theme.muted("Run")} ${wrapPath(value, width - 4, theme)}`);
+      return;
+    }
+
+    const turn = message.match(/^Turn\s+([^:]+):\s+(\S+)\s+(.+)$/);
+    if (turn) {
+      stopSpinner();
+      const [, id, actor, phase] = turn;
+      active = { id, actor, phase, startedAt: Date.now() };
+      if (interactive) {
+        renderSpinner();
+        timer = setInterval(renderSpinner, 100);
+      } else {
+        writeLine(formatEvent(message, theme));
+      }
+      return;
+    }
+
+    const done = message.match(/^Done\s+([^:]+):\s+(\S+)\s+(.+)$/);
+    if (done) {
+      const [, id, actor, phase] = done;
+      const elapsed = active && active.id === id ? elapsedSeconds(active.startedAt) : "";
+      stopSpinner();
+      writeLine(`${theme.success("✓")} ${theme.accent(id)} ${theme.label(actor)} ${theme.muted(formatPhase(phase))}${elapsed ? theme.muted(` ${elapsed}`) : ""}`);
+      active = null;
+      return;
+    }
+
+    stopSpinner();
+    writeLine(formatEvent(message, theme));
+  }
+
+  function finish(): void {
+    stopSpinner();
+  }
+
+  function finalPath(value: string): void {
+    stopSpinner();
+    writeLine("");
+    writeLine(`${theme.success("Final report")} ${wrapPath(value, width - 13, theme)}`);
+  }
+
+  function renderSpinner(): void {
+    if (!active) return;
+    const currentFrame = frames[frame % frames.length];
+    const verb = verbs[Math.floor(verbIndex / 8) % verbs.length];
+    frame += 1;
+    verbIndex += 1;
+    const elapsed = elapsedSeconds(active.startedAt);
+    const text = `${theme.accent(currentFrame)} ${theme.label(active.actor)} ${theme.muted(formatPhase(active.phase))} ${theme.accent(verb)} ${theme.muted(elapsed)}`;
+    const line = truncateForTerminal(text, width);
+    output.write(`\r\x1b[2K${line}`);
+    lineVisible = true;
+  }
+
+  function stopSpinner(): void {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    if (lineVisible) {
+      output.write("\r\x1b[2K");
+      lineVisible = false;
+    }
+  }
+
+  function writeLine(line: string): void {
+    output.write(`${line}\n`);
+  }
+
+  return { event, finalPath, finish };
+}
+
 export function formatQuestionBlock({
   index,
   total,
@@ -102,6 +202,45 @@ export function formatPrompt({
 
 function formatPhase(phase: string): string {
   return phase.replace(/-/g, " ");
+}
+
+function elapsedSeconds(startedAt: number): string {
+  return `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+}
+
+function wrapPath(value: string, width: number, theme: TerminalTheme): string {
+  if (stripAnsi(value).length <= width) return theme.accent(value);
+  const parts = value.split("/");
+  const lines: string[] = [];
+  let current = "";
+
+  for (const part of parts) {
+    const next = current ? joinPathDisplay(current, part) : part || "/";
+    if (stripAnsi(next).length > width && current) {
+      lines.push(current);
+      current = part;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines.map((line, index) => index === 0 ? theme.accent(line) : `    ${theme.accent(line)}`).join("\n");
+}
+
+function joinPathDisplay(current: string, part: string): string {
+  if (current === "/") return `/${part}`;
+  return `${current}/${part}`;
+}
+
+function truncateForTerminal(value: string, width: number): string {
+  const visible = stripAnsi(value);
+  if (visible.length <= width) return value;
+  return visible.slice(0, Math.max(0, width - 1));
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
 function helpText({

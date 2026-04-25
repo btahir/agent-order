@@ -6,7 +6,7 @@ import { pathExists, readText } from "./fs-utils.js";
 import { checkAgent } from "./adapters/index.js";
 import { runCouncil } from "./orchestrator.js";
 import { createHumanPrompter } from "./human-prompter.js";
-import { createTerminalTheme, formatEvent } from "./terminal-ui.js";
+import { createTerminalReporter } from "./terminal-ui.js";
 import type { CouncilConfig } from "./types.js";
 
 export async function runCli(argv: string[]): Promise<void> {
@@ -45,21 +45,26 @@ export async function runCli(argv: string[]): Promise<void> {
 
   const scenarioText = await resolveScenarioText(scenarioInput);
   const humanPrompter = createHumanPrompter();
-  const theme = createTerminalTheme({ color: Boolean(process.stderr.isTTY) });
+  const reporter = createTerminalReporter({ output: process.stderr, color: Boolean(process.stderr.isTTY) });
   let result;
   try {
     result = await runCouncil({
       scenarioText,
       config,
       cwd: process.cwd(),
-      onEvent: (message: string) => console.error(formatEvent(message, theme)),
+      onEvent: reporter.event,
       askUser: humanPrompter.askQuestions
     });
   } finally {
+    reporter.finish();
     humanPrompter.close();
   }
 
-  console.log(result.finalPath);
+  if (process.stdout.isTTY) {
+    reporter.finalPath(result.finalPath);
+  } else {
+    console.log(result.finalPath);
+  }
 }
 
 async function runChecks(config: CouncilConfig): Promise<void> {

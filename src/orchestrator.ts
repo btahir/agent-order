@@ -8,6 +8,7 @@ import type {
   AgentConfig,
   AgentTurnResult,
   AskUser,
+  AskUserInput,
   CouncilConfig,
   HumanAnswer,
   TurnRecord,
@@ -366,6 +367,7 @@ async function executeAgentTurn({
     blocking_issue_count: result.blocking_issues.length,
     question_count: result.questions_for_user.length
   });
+  onEvent(`Done ${turn.id}: ${agent.id} ${phase}`);
 
   return turn;
 }
@@ -438,11 +440,13 @@ async function maybeRunIntake({
     if (questions.length === 0) break;
 
     const response = askUser
-      ? await askUser({
+      ? await askWithEvent({
+          onEvent,
           title: "Intake clarification",
           questions,
           allowDone: true,
-          defaultToRecommendation: true
+          defaultToRecommendation: true,
+          askUser
         })
       : { answers: questions.map(defaultAnswerForQuestion), stopped: false };
 
@@ -526,11 +530,13 @@ async function maybeAskClarification({
   onEvent(`Turn ${questionTurn.id}: orchestrator user-questions`);
 
   const response = askUser
-    ? await askUser({
+    ? await askWithEvent({
+        onEvent,
         title: "Clarification requested",
         questions: selectedQuestions,
         allowDone: false,
-        defaultToRecommendation: true
+        defaultToRecommendation: true,
+        askUser
       })
     : { answers: selectedQuestions.map(defaultAnswerForQuestion), stopped: false };
 
@@ -588,11 +594,13 @@ async function maybeAskBeforeFinal({
   onEvent(`Turn ${questionTurn.id}: orchestrator before-final-question`);
 
   const response = askUser
-    ? await askUser({
+    ? await askWithEvent({
+        onEvent,
         title: "Before final synthesis",
         questions: [question],
         allowDone: false,
-        defaultToRecommendation: false
+        defaultToRecommendation: false,
+        askUser
       })
     : { answers: [], stopped: false };
 
@@ -642,6 +650,18 @@ async function writeSyntheticTurn({
     question_count: result.questions_for_user.length
   });
   return turn;
+}
+
+async function askWithEvent({
+  onEvent,
+  askUser,
+  ...input
+}: AskUserInput & {
+  onEvent: (message: string) => void;
+  askUser: AskUser;
+}) {
+  onEvent(`Input requested: ${input.title ?? "Human input"}`);
+  return askUser(input);
 }
 
 async function writeHumanAnswersTurn({
