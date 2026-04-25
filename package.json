@@ -1,6 +1,6 @@
 {
   "name": "agent-order",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The Order of the Agents — AI peer review for decisions that matter. Codex, Claude, and other agents deliberate, critique, and issue a decree.",
   "type": "module",
   "author": "Bilal Tahir",
