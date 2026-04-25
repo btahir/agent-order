@@ -5,7 +5,7 @@
 The Order of the Agents convenes a sworn fellowship of AI agents — Codex, Claude, and other CLIs you trust — around a single question. Each agent takes a position, challenges the others, and revises in turn, until the Order issues a final decree. Every oath, critique, and revision is recorded as Markdown, so the reasoning behind the decision is auditable, shareable, and yours to keep.
 
 ```bash
-npx agent-order@latest "Plan a Launch Readiness feature for a project management app. Help teams decide whether a release is ready to ship. Include UX, data model, API, risks, telemetry, and acceptance criteria."
+agent-order "Plan a Launch Readiness feature for a project management app. Help teams decide whether a release is ready to ship. Include UX, data model, API, risks, telemetry, and acceptance criteria."
 ```
 
 You get:
@@ -19,7 +19,7 @@ Short version: **stop asking one model for decisions that matter.**
 
 ## Showcase
 
-Watch the one-minute product video: [youtu.be/KTy2g1cQ2Po](https://youtu.be/KTy2g1cQ2Po)
+Watch the [one-minute product video](https://youtu.be/KTy2g1cQ2Po).
 
 ## Why
 
@@ -41,12 +41,10 @@ The product is not another chat wrapper. It is an auditable decision packet: ind
 
 ## Install
 
-For local development from this repo:
+Install from npm:
 
 ```bash
-npm install
-npm run build
-npm link
+npm install -g agent-order
 ```
 
 Then run:
@@ -59,6 +57,20 @@ For zero-install use:
 
 ```bash
 npx agent-order@latest ./scenario.md
+```
+
+For local development from this repo:
+
+```bash
+npm install
+npm run build
+npm link
+```
+
+Then run the linked CLI:
+
+```bash
+agent-order "Should we build or buy an internal analytics dashboard?"
 ```
 
 The Order assumes the agent CLIs you use, such as `codex` and `claude`, are already installed and logged in.
