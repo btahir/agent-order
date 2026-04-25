@@ -9,5 +9,14 @@ agent-order-runs/
 .claude/
 skills-lock.json
 docs/showcase-video/
+docs/assets/
+docs/**/*.mp4
+docs/**/*.mov
+docs/**/*.webm
+docs/**/*.gif
+docs/**/*.png
+docs/**/*.jpg
+docs/**/*.jpeg
 docs/**/.thumbnails/
 docs/**/renders/
+.github/assets/

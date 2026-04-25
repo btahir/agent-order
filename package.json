@@ -22,8 +22,7 @@
     "dist/bin",
     "dist/src",
     "README.md",
-    "examples",
-    "docs/assets"
+    "examples"
   ],
   "scripts": {
     "build": "tsc && chmod +x dist/bin/agent-order.js",
