@@ -1,13 +1,6 @@
 # The Order of the Agents
 
-<video
-  src="docs/assets/agent-order-showcase.mp4"
-  poster="docs/assets/agent-order-hero.png"
-  controls
-  muted
-  playsinline
-  width="100%"
-></video>
+[![The Order of the Agents hero: pixel-art fantasy advisors deliberating around a council table](docs/assets/agent-order-hero.png)](docs/assets/agent-order-showcase.mp4)
 
 The Order of the Agents convenes a sworn fellowship of AI agents — Codex, Claude, and other CLIs you trust — around a single question. Each agent takes a position, challenges the others, and revises in turn, until the Order issues a final decree. Every oath, critique, and revision is recorded as Markdown, so the reasoning behind the decision is auditable, shareable, and yours to keep.
 
@@ -27,8 +20,6 @@ Short version: **stop asking one model for decisions that matter.**
 ## Showcase
 
 Watch the one-minute product video: [docs/assets/agent-order-showcase.mp4](docs/assets/agent-order-showcase.mp4)
-
-The durable README media lives in [docs/assets](docs/assets). The editable HyperFrames workspace is intentionally ignored under `docs/showcase-video/` so new drafts, renders, music, and thumbnails do not create git noise.
 
 ## Why
 
@@ -243,16 +234,3 @@ The Order of the Agents is for senior developers, tech leads, staff engineers, a
 - developer-tool product strategy
 
 Use it when the decision is worth a few minutes of critique. Do not use it for every prompt.
-
-## Launch Checklist
-
-Before a public launch:
-
-- Add a short GIF: command -> visible disagreement -> `final/report.md`
-- Ship complete rendered example runs
-- Add `agent-order doctor` diagnostics beyond the current `check` alias
-- Add exact missing-binary guidance per adapter
-- Add npm, CI, license, and TypeScript badges
-- Add templates for architecture decision, build-vs-buy, red-team review, incident review, and product strategy
-
-The launch should center on a memorable run, not on adapter extensibility.
