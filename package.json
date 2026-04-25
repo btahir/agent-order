@@ -42,6 +42,7 @@
     "smoke:real": "npm run build && node dist/bin/agent-order.js \"Plan a saved-search feature for a project management app. Include UX, data model, API, rollout risks, and acceptance criteria.\" --agents codex,claude --out .tmp/real-runs --max-turns 3 --human-input never --no-final-review"
   },
   "dependencies": {
+    "chalk": "^5.6.2",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
