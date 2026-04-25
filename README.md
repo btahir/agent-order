@@ -1,6 +1,6 @@
 # The Order of the Agents
 
-[![The Order of the Agents hero: pixel-art fantasy advisors deliberating around a council table](docs/assets/agent-order-hero.png)](docs/assets/agent-order-showcase.mp4)
+[![Agent Order demo](https://raw.githubusercontent.com/btahir/agent-order/main/docs/assets/demo.gif)](https://youtu.be/KTy2g1cQ2Po)
 
 The Order of the Agents convenes a sworn fellowship of AI agents — Codex, Claude, and other CLIs you trust — around a single question. Each agent takes a position, challenges the others, and revises in turn, until the Order issues a final decree. Every oath, critique, and revision is recorded as Markdown, so the reasoning behind the decision is auditable, shareable, and yours to keep.
 
@@ -19,7 +19,7 @@ Short version: **stop asking one model for decisions that matter.**
 
 ## Showcase
 
-Watch the one-minute product video: [docs/assets/agent-order-showcase.mp4](docs/assets/agent-order-showcase.mp4)
+Watch the one-minute product video: [youtu.be/KTy2g1cQ2Po](https://youtu.be/KTy2g1cQ2Po)
 
 ## Why
 
@@ -208,18 +208,17 @@ Codex and Claude are built in. Any scriptable CLI can participate through `gener
 
 ```yaml
 agents:
-  - id: deepseek
+  - id: gemini
     adapter: generic-cli
-    command: deepseek
+    command: gemini
     args:
-      - chat
-    input:
-      mode: stdin
+      - -p
+      - "{{prompt}}"
     output:
       mode: stdout
 ```
 
-The generic adapter sends the prompt on stdin and expects either JSON matching the agent-turn schema or plain Markdown on stdout.
+The generic adapter can pass prompts through stdin, a prompt file, or templated args like `{{prompt}}`, then reads either JSON matching the agent-turn schema or plain Markdown from stdout.
 
 ## Product Positioning
 
