@@ -1,4 +1,9 @@
+import { TEMPLATE_IDS } from "./templates/index.js";
 import type { CliFlags, ParsedArgs } from "./types.js";
+
+const NON_TEMPLATE_COMMANDS = ["run", "init", "check", "doctor", "help", "grill", "replay"] as const;
+
+type NonTemplateCommand = (typeof NON_TEMPLATE_COMMANDS)[number];
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const result: ParsedArgs = {
@@ -8,8 +13,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
   };
 
   const args = [...argv];
-  if (args[0] && !args[0].startsWith("-") && isCommand(args[0])) {
-    result.command = args.shift() as ParsedArgs["command"];
+  if (args[0] && !args[0].startsWith("-")) {
+    if (isNonTemplateCommand(args[0])) {
+      result.command = args.shift() as ParsedArgs["command"];
+    } else if (TEMPLATE_IDS.includes(args[0])) {
+      result.template = args.shift();
+      result.command = "run";
+    }
   }
 
   for (let i = 0; i < args.length; i += 1) {
@@ -60,11 +70,15 @@ export function parseArgs(argv: string[]): ParsedArgs {
     setStringFlag(result.flags, key, value);
   }
 
+  if (result.template && !result.flags.template) {
+    result.flags.template = result.template;
+  }
+
   return result;
 }
 
-function isCommand(value: string): value is ParsedArgs["command"] {
-  return ["init", "check", "doctor", "help", "grill"].includes(value);
+function isNonTemplateCommand(value: string): value is NonTemplateCommand {
+  return (NON_TEMPLATE_COMMANDS as readonly string[]).includes(value);
 }
 
 function flagNameToKey(name: string): keyof CliFlags {
@@ -85,6 +99,14 @@ function flagNameToKey(name: string): keyof CliFlags {
       return "maxQuestions";
     case "--human-input":
       return "humanInput";
+    case "--template":
+      return "template";
+    case "--depth":
+      return "council";
+    case "--council":
+      return "council";
+    case "--templates-dir":
+      return "templatesDir";
     default:
       throw new Error(`Unknown flag: ${name}`);
   }
@@ -100,6 +122,9 @@ function setStringFlag(flags: CliFlags, key: keyof CliFlags, value: string): voi
     case "intake":
     case "maxQuestions":
     case "humanInput":
+    case "template":
+    case "council":
+    case "templatesDir":
       flags[key] = value;
       return;
     default:

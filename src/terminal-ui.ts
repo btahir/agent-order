@@ -79,6 +79,48 @@ export function createTerminalReporter({
       return;
     }
 
+    if (message.startsWith("Template:")) {
+      stopSpinner();
+      const value = message.slice("Template:".length).trim();
+      writeLine(`${headerIndent}${theme.muted("template")}  ${theme.accent(value)}`);
+      return;
+    }
+
+    if (message.startsWith("Council preset:")) {
+      stopSpinner();
+      const value = message.slice("Council preset:".length).trim();
+      writeLine(`${headerIndent}${theme.muted("council")}  ${theme.accent(value)}`);
+      return;
+    }
+
+    if (message.startsWith("disagreement:")) {
+      stopSpinner();
+      const value = message.slice("disagreement:".length).trim();
+      writeLine(`${bodyIndent}${theme.warning("⚡")}  ${theme.label("disagreement")}  ${theme.muted(value)}`);
+      return;
+    }
+
+    if (message.startsWith("rubric:")) {
+      stopSpinner();
+      const value = message.slice("rubric:".length).trim();
+      writeLine(`${bodyIndent}${theme.accent("◆")}  ${theme.label("rubric      ")}  ${theme.muted(value)}`);
+      return;
+    }
+
+    if (message.startsWith("cost:")) {
+      stopSpinner();
+      const value = message.slice("cost:".length).trim();
+      writeLine(`${bodyIndent}${theme.muted("$")}  ${theme.label("cost        ")}  ${theme.muted(value)}`);
+      return;
+    }
+
+    if (message.startsWith("warning:")) {
+      stopSpinner();
+      const value = message.slice("warning:".length).trim();
+      writeLine(`${bodyIndent}${theme.warning("!")}  ${theme.warning(value)}`);
+      return;
+    }
+
     const turn = message.match(/^Turn\s+([^:]+):\s+(\S+)\s+(.+)$/);
     if (turn) {
       stopSpinner();
@@ -116,6 +158,11 @@ export function createTerminalReporter({
     writePhaseHeader("final report");
     writeLine(`${bodyIndent}${theme.accent("→")}  ${theme.accent(toRelativePath(value))}`);
     writeLine("");
+  }
+
+  function htmlPath(value: string): void {
+    stopSpinner();
+    writeLine(`${bodyIndent}${theme.accent("⌬")}  ${theme.accent(toRelativePath(value))}`);
   }
 
   function writePhaseHeaderIfNew(phase: string): void {
@@ -159,7 +206,7 @@ export function createTerminalReporter({
     output.write(`${line}\n`);
   }
 
-  return { event, finalPath, finish };
+  return { event, finalPath, htmlPath, finish };
 }
 
 function toRelativePath(value: string): string {
@@ -218,8 +265,8 @@ export function formatQuestionBlock({
 }
 
 export function formatPrompt({
-  allowDone,
-  defaultToRecommendation,
+  allowDone: _allowDone,
+  defaultToRecommendation: _defaultToRecommendation,
   theme
 }: {
   allowDone: boolean;

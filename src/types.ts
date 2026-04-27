@@ -1,5 +1,38 @@
 export type AgentStatus = "ok" | "blocked";
 
+export type ClaimKind = "recommendation" | "assumption" | "risk" | "fact" | "decision";
+
+export interface Claim {
+  id: string;
+  kind: ClaimKind;
+  text: string;
+  confidence?: number;
+}
+
+export type ObjectionSeverity = "blocking" | "major" | "minor";
+
+export interface Objection {
+  id: string;
+  target_turn?: string | null;
+  target_claim_id?: string | null;
+  severity: ObjectionSeverity;
+  text: string;
+  suggested_fix?: string;
+}
+
+export interface RubricScore {
+  criterion_id: string;
+  criterion_text: string;
+  pass: boolean;
+  evidence: string;
+}
+
+export interface CostInfo {
+  tokens_in?: number;
+  tokens_out?: number;
+  cost_usd?: number;
+}
+
 export interface UserQuestion {
   question: string;
   why_it_matters: string;
@@ -25,6 +58,10 @@ export interface AgentTurnResult {
   markdown: string;
   blocking_issues: string[];
   questions_for_user: UserQuestion[];
+  claims?: Claim[];
+  objections?: Objection[];
+  rubric_scores?: RubricScore[];
+  incorporated_objection_ids?: string[];
 }
 
 export interface TurnRecord {
@@ -36,6 +73,13 @@ export interface TurnRecord {
   status: AgentStatus;
   blockingIssues: string[];
   questionsForUser: UserQuestion[];
+  claims: Claim[];
+  objections: Objection[];
+  rubricScores: RubricScore[];
+  incorporatedObjectionIds: string[];
+  cost?: CostInfo;
+  durationMs?: number;
+  anonymousLabel?: string | null;
   path: string;
 }
 
@@ -48,6 +92,7 @@ export interface AgentConfig {
   extra_args?: string[];
   args?: string[];
   check_args?: string[];
+  preset?: string;
   input?: {
     mode?: string;
   };
@@ -55,6 +100,12 @@ export interface AgentConfig {
     mode?: string;
   };
   options?: Record<string, unknown>;
+}
+
+export interface SynthesisConfig {
+  agent: string | null;
+  aggregators?: string[] | null;
+  meta_synthesizer?: string | null;
 }
 
 export interface CouncilConfig {
@@ -66,9 +117,7 @@ export interface CouncilConfig {
   output: {
     dir: string;
   };
-  synthesis: {
-    agent: string | null;
-  };
+  synthesis: SynthesisConfig;
   intake: {
     enabled: boolean;
     mode: string;
@@ -88,6 +137,10 @@ export interface CouncilConfig {
     claude: Record<string, unknown>;
     generic: Record<string, unknown>;
   };
+  template?: string | null;
+  templates_dir?: string | null;
+  council_preset?: string | null;
+  cost_warning_usd?: number;
   dry_run?: boolean;
   __configPath?: string | null;
 }
@@ -103,12 +156,16 @@ export interface CliFlags {
   maxQuestions?: string;
   humanInput?: string;
   dryRun?: boolean;
+  template?: string;
+  council?: string;
+  templatesDir?: string;
 }
 
 export interface ParsedArgs {
-  command: "run" | "init" | "check" | "doctor" | "help" | "grill";
+  command: "run" | "init" | "check" | "doctor" | "help" | "grill" | "replay";
   positional: string[];
   flags: CliFlags;
+  template?: string;
 }
 
 export interface ProcessResult {
@@ -149,6 +206,7 @@ export interface AdapterTurnOutput {
   result: AgentTurnResult;
   process: ProcessResultWithCommand;
   raw: string;
+  cost?: CostInfo;
 }
 
 export interface AgentCheckResult {
@@ -173,3 +231,31 @@ export interface AskUserResult {
 export type AskUser = (input: AskUserInput) => Promise<AskUserResult>;
 
 export type JsonObject = Record<string, unknown>;
+
+export interface RubricCriterion {
+  id: string;
+  text: string;
+  guidance?: string;
+}
+
+export interface ArtifactTemplate {
+  id: string;
+  name: string;
+  summary: string;
+  scenario_shape?: {
+    description?: string;
+    required_inputs?: string[];
+  };
+  synthesis_structure: {
+    sections: string[];
+    notes?: string;
+  };
+  rubric: RubricCriterion[];
+  intake_questions?: string[];
+}
+
+export interface AnonymizationMapping {
+  phase: string;
+  reveal: Record<string, string>;
+  views: Record<string, Record<string, string>>;
+}

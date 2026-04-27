@@ -1,6 +1,14 @@
 import { normalizeAgentOutput } from "../schema.js";
 import { commandForDisplay, runProcess } from "../process.js";
-import type { AdapterTurnOutput, AgentCheckResult, AgentConfig, AgentTurnInvocation, CouncilConfig, ProcessResult } from "../types.js";
+import type {
+  AdapterTurnOutput,
+  AgentCheckResult,
+  AgentConfig,
+  AgentTurnInvocation,
+  CostInfo,
+  CouncilConfig,
+  ProcessResult
+} from "../types.js";
 
 export async function runClaudeTurn({ agent, config, prompt, schema, cwd }: AgentTurnInvocation): Promise<AdapterTurnOutput> {
   const options = {
@@ -32,14 +40,15 @@ export async function runClaudeTurn({ agent, config, prompt, schema, cwd }: Agen
     throw new Error(formatFailure(agent.id, command, args, processResult));
   }
 
-  const parsed = parseClaudeJson(processResult.stdout);
+  const { payload, cost } = parseClaudeJson(processResult.stdout);
   return {
-    result: normalizeAgentOutput(parsed),
+    result: normalizeAgentOutput(payload),
     process: {
       ...processResult,
       command: commandForDisplay(command, args)
     },
-    raw: processResult.stdout
+    raw: processResult.stdout,
+    cost
   };
 }
 
@@ -66,27 +75,50 @@ export async function checkClaude(agent: AgentConfig, _config: CouncilConfig): P
   };
 }
 
-function parseClaudeJson(stdout: string): unknown {
+function parseClaudeJson(stdout: string): { payload: unknown; cost?: CostInfo } {
   const text = stdout.trim();
-  let value;
+  let value: unknown;
   try {
     value = JSON.parse(text);
   } catch {
-    return text;
+    return { payload: text };
   }
 
+  let payload: unknown = value;
+  let cost: CostInfo | undefined;
   if (value && typeof value === "object") {
-    if (value.structured_output) return value.structured_output;
-    if (typeof value.result === "string") {
+    const obj = value as Record<string, unknown>;
+    cost = extractCost(obj);
+    if (obj.structured_output !== undefined) {
+      payload = obj.structured_output;
+    } else if (typeof obj.result === "string") {
       try {
-        return JSON.parse(value.result);
+        payload = JSON.parse(obj.result);
       } catch {
-        return value.result;
+        payload = obj.result;
       }
     }
   }
 
-  return value;
+  return { payload, cost };
+}
+
+function extractCost(obj: Record<string, unknown>): CostInfo | undefined {
+  const cost: CostInfo = {};
+  const usage = obj.usage as Record<string, unknown> | undefined;
+  if (usage) {
+    const inputTokens = numberish(usage.input_tokens) ?? numberish(usage.input);
+    const outputTokens = numberish(usage.output_tokens) ?? numberish(usage.output);
+    if (inputTokens !== undefined) cost.tokens_in = inputTokens;
+    if (outputTokens !== undefined) cost.tokens_out = outputTokens;
+  }
+  const totalCost = numberish(obj.total_cost_usd) ?? numberish(obj.cost_usd);
+  if (totalCost !== undefined) cost.cost_usd = totalCost;
+  return Object.keys(cost).length > 0 ? cost : undefined;
+}
+
+function numberish(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function formatFailure(agentId: string, command: string, args: string[], result: ProcessResult): string {

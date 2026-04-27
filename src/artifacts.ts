@@ -1,6 +1,6 @@
 import path from "node:path";
-import { ensureDir, readText, toPosixPath, writeText } from "./fs-utils.js";
-import type { AgentTurnResult, JsonObject, TurnRecord } from "./types.js";
+import { ensureDir, pathExists, readText, toPosixPath, writeText } from "./fs-utils.js";
+import type { AgentTurnResult, CostInfo, JsonObject, TurnRecord } from "./types.js";
 
 export class ArtifactStore {
   cwd: string;
@@ -12,6 +12,7 @@ export class ArtifactStore {
   schemaDir = "";
   finalDir = "";
   turns: TurnRecord[] = [];
+  private reservedCount = 0;
 
   constructor({ cwd, baseDir }: { cwd: string; baseDir: string }) {
     this.cwd = cwd;
@@ -20,7 +21,7 @@ export class ArtifactStore {
 
   async init(): Promise<string> {
     const timestamp = timestampForPath(new Date());
-    this.runDir = path.join(this.baseDir, timestamp);
+    this.runDir = await uniqueRunDir(this.baseDir, timestamp);
     this.turnsDir = path.join(this.runDir, "turns");
     this.promptsDir = path.join(this.runDir, "prompts");
     this.rawDir = path.join(this.runDir, "raw");
@@ -36,12 +37,31 @@ export class ArtifactStore {
     return this.runDir;
   }
 
-  nextTurnNumber(): number {
-    return this.turns.length + 1;
+  reserveTurn(): number {
+    this.reservedCount += 1;
+    return this.reservedCount;
   }
 
-  turnId(turnNumber = this.nextTurnNumber()): string {
+  reserveTurns(count: number): number[] {
+    const start = this.reservedCount + 1;
+    this.reservedCount += count;
+    return Array.from({ length: count }, (_, index) => start + index);
+  }
+
+  nextTurnNumber(): number {
+    return this.reserveTurn();
+  }
+
+  reservedSoFar(): number {
+    return this.reservedCount;
+  }
+
+  turnId(turnNumber: number): string {
     return String(turnNumber).padStart(4, "0");
+  }
+
+  get sortedTurns(): TurnRecord[] {
+    return [...this.turns].sort((a, b) => a.id.localeCompare(b.id));
   }
 
   async writeScenario(scenarioText: string): Promise<string> {
@@ -73,17 +93,28 @@ export class ArtifactStore {
     actor,
     phase,
     inputTurnIds,
-    result
+    result,
+    cost,
+    durationMs,
+    anonymousLabel
   }: {
     turnNumber: number;
     actor: string;
     phase: string;
     inputTurnIds: string[];
     result: AgentTurnResult;
+    cost?: CostInfo;
+    durationMs?: number;
+    anonymousLabel?: string | null;
   }): Promise<TurnRecord> {
     const turnId = this.turnId(turnNumber);
     const fileName = `${turnId}-${safeName(actor)}.${safeName(phase)}.md`;
     const outputPath = path.join(this.turnsDir, fileName);
+    const claims = result.claims ?? [];
+    const objections = result.objections ?? [];
+    const rubricScores = result.rubric_scores ?? [];
+    const incorporated = result.incorporated_objection_ids ?? [];
+
     const metadata: JsonObject = {
       turn: turnId,
       actor,
@@ -92,13 +123,20 @@ export class ArtifactStore {
       input_turns: inputTurnIds,
       status: result.status,
       blocking_issues: result.blocking_issues,
-      questions_for_user: result.questions_for_user ?? []
+      questions_for_user: result.questions_for_user ?? [],
+      claims,
+      objections,
+      rubric_scores: rubricScores,
+      incorporated_objection_ids: incorporated
     };
+    if (anonymousLabel) metadata.anonymous_label = anonymousLabel;
+    if (durationMs !== undefined) metadata.duration_ms = durationMs;
+    if (cost) metadata.cost = cost;
 
     const content = `${frontmatter(metadata)}\n${result.markdown.trim()}\n`;
     await writeText(outputPath, content);
 
-    const record = {
+    const record: TurnRecord = {
       id: turnId,
       actor,
       phase,
@@ -107,6 +145,13 @@ export class ArtifactStore {
       status: result.status,
       blockingIssues: result.blocking_issues,
       questionsForUser: result.questions_for_user ?? [],
+      claims,
+      objections,
+      rubricScores,
+      incorporatedObjectionIds: incorporated,
+      cost,
+      durationMs,
+      anonymousLabel: anonymousLabel ?? null,
       path: outputPath
     };
     this.turns.push(record);
@@ -120,14 +165,16 @@ export class ArtifactStore {
     await import("node:fs/promises").then((fs) => fs.appendFile(tracePath, line, "utf8"));
   }
 
-  async writeIndex(finalPath: string | null = null): Promise<void> {
+  async writeIndex(finalPath: string | null = null, htmlPath: string | null = null): Promise<void> {
     const lines = ["# The Order of the Agents Run", ""];
     lines.push(`Run directory: \`${toPosixPath(path.relative(this.cwd, this.runDir))}\``);
     if (finalPath) lines.push(`Final report: \`${toPosixPath(path.relative(this.cwd, finalPath))}\``);
+    if (htmlPath) lines.push(`HTML index: \`${toPosixPath(path.relative(this.cwd, htmlPath))}\``);
     lines.push("", "## Turns", "");
-    for (const turn of this.turns) {
+    for (const turn of this.sortedTurns) {
       const rel = toPosixPath(path.relative(this.runDir, turn.path));
-      lines.push(`- ${turn.id} ${turn.actor} ${turn.phase}: [${rel}](${rel})`);
+      const label = turn.anonymousLabel ? ` [${turn.anonymousLabel}]` : "";
+      lines.push(`- ${turn.id} ${turn.actor}${label} ${turn.phase}: [${rel}](${rel})`);
     }
     lines.push("");
     await writeText(path.join(this.runDir, "index.md"), lines.join("\n"));
@@ -135,14 +182,36 @@ export class ArtifactStore {
 
   async writeFinalReport(markdown: string, sourceTurn: TurnRecord | null): Promise<string> {
     const finalPath = path.join(this.finalDir, "report.md");
-    const sourceLine = sourceTurn ? `<!-- source_turn: ${sourceTurn.id} ${sourceTurn.actor}.${sourceTurn.phase} -->\n\n` : "";
+    const sourceLine = sourceTurn
+      ? `<!-- source_turn: ${sourceTurn.id} ${sourceTurn.actor}.${sourceTurn.phase} -->\n\n`
+      : "";
     await writeText(finalPath, sourceLine + markdown.trim() + "\n");
     return finalPath;
+  }
+
+  async writeHtmlIndex(html: string): Promise<string> {
+    const htmlPath = path.join(this.runDir, "index.html");
+    await writeText(htmlPath, html);
+    return htmlPath;
   }
 
   async readTurn(turn: TurnRecord): Promise<string> {
     return readText(turn.path);
   }
+
+  async readScenario(): Promise<string> {
+    return readText(path.join(this.runDir, "scenario.md"));
+  }
+}
+
+async function uniqueRunDir(baseDir: string, timestamp: string): Promise<string> {
+  let candidate = path.join(baseDir, timestamp);
+  let suffix = 2;
+  while (await pathExists(candidate)) {
+    candidate = path.join(baseDir, `${timestamp}-${suffix}`);
+    suffix += 1;
+  }
+  return candidate;
 }
 
 function frontmatter(metadata: JsonObject): string {
@@ -155,6 +224,8 @@ function frontmatter(metadata: JsonObject): string {
         lines.push(`${key}:`);
         for (const item of value) lines.push(`  - ${JSON.stringify(item)}`);
       }
+    } else if (value && typeof value === "object") {
+      lines.push(`${key}: ${JSON.stringify(value)}`);
     } else {
       lines.push(`${key}: ${JSON.stringify(value)}`);
     }

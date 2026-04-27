@@ -3,9 +3,24 @@ import path from "node:path";
 import { normalizeAgentOutput } from "../schema.js";
 import { commandForDisplay, runProcess } from "../process.js";
 import { writeText } from "../fs-utils.js";
-import type { AdapterTurnOutput, AgentCheckResult, AgentConfig, AgentTurnInvocation, CouncilConfig, ProcessResult } from "../types.js";
+import type {
+  AdapterTurnOutput,
+  AgentCheckResult,
+  AgentConfig,
+  AgentTurnInvocation,
+  CouncilConfig,
+  ProcessResult
+} from "../types.js";
 
-export async function runGenericTurn({ agent, config, prompt, outputPath, cwd, turnNumber, phase }: AgentTurnInvocation): Promise<AdapterTurnOutput> {
+export async function runGenericTurn({
+  agent,
+  config,
+  prompt,
+  outputPath,
+  cwd,
+  turnNumber,
+  phase
+}: AgentTurnInvocation): Promise<AdapterTurnOutput> {
   const options = {
     ...config.adapters.generic,
     ...(agent.options ?? {})
@@ -13,7 +28,10 @@ export async function runGenericTurn({ agent, config, prompt, outputPath, cwd, t
   const command = agent.command;
   if (!command) throw new Error(`generic-cli agent ${agent.id} requires a command.`);
 
-  const promptPath = path.join(path.dirname(outputPath), `${String(turnNumber).padStart(4, "0")}-${agent.id}.${phase}.input.md`);
+  const promptPath = path.join(
+    path.dirname(outputPath),
+    `${String(turnNumber).padStart(4, "0")}-${agent.id}.${phase}.input.md`
+  );
   await writeText(promptPath, prompt);
 
   const templateContext: Record<string, string> = {
@@ -84,7 +102,10 @@ export async function checkGeneric(agent: AgentConfig, _config: CouncilConfig): 
     ok: result.code === 0,
     agent: agent.id,
     adapter: agent.adapter,
-    message: result.code === 0 ? (result.stdout || result.stderr).trim() || "command available" : result.stderr.trim() || "check failed"
+    message:
+      result.code === 0
+        ? (result.stdout || result.stderr).trim() || "command available"
+        : result.stderr.trim() || "check failed"
   };
 }
 

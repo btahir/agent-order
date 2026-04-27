@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { pathExists } from "./fs-utils.js";
+import { applyCouncilPreset } from "./councils.js";
+import { resolvePresetAgent } from "./adapters/presets.js";
 import type { AgentConfig, CliFlags, CouncilConfig } from "./types.js";
 
 const DEFAULT_CONFIG_NAMES = [
@@ -16,8 +18,8 @@ const DEFAULT_CONFIG_NAMES = [
 export const defaultConfig: CouncilConfig = {
   protocol: "agent-order/v1",
   agents: [
-    { id: "codex", adapter: "codex-cli", command: "codex" },
-    { id: "claude", adapter: "claude-cli", command: "claude" }
+    { id: "codex", adapter: "codex-cli", command: "codex", preset: "codex" },
+    { id: "claude", adapter: "claude-cli", command: "claude", preset: "claude" }
   ],
   limits: {
     max_turns: 12
@@ -26,7 +28,9 @@ export const defaultConfig: CouncilConfig = {
     dir: "./agent-order-runs"
   },
   synthesis: {
-    agent: null
+    agent: null,
+    aggregators: null,
+    meta_synthesizer: null
   },
   intake: {
     enabled: false,
@@ -61,7 +65,11 @@ export const defaultConfig: CouncilConfig = {
     generic: {
       timeout_ms: 600000
     }
-  }
+  },
+  template: null,
+  templates_dir: null,
+  council_preset: null,
+  cost_warning_usd: 0
 };
 
 export async function loadConfig(flags: CliFlags, cwd = process.cwd()): Promise<CouncilConfig> {
@@ -73,6 +81,10 @@ export async function loadConfig(flags: CliFlags, cwd = process.cwd()): Promise<
   const explicitMaxTurns = flags.maxTurns !== undefined || loaded?.limits?.max_turns !== undefined;
   const config = mergeConfig(defaultConfig, loaded);
 
+  if (flags.council) {
+    applyCouncilPreset(config, flags.council);
+  }
+
   if (flags.agents) {
     const selected = flags.agents.split(",").map((id) => id.trim()).filter(Boolean);
     config.agents = config.agents.filter((agent) => selected.includes(agent.id));
@@ -83,6 +95,15 @@ export async function loadConfig(flags: CliFlags, cwd = process.cwd()): Promise<
     }
     if (!flags.synthesizer && config.synthesis.agent && !selected.includes(config.synthesis.agent)) {
       config.synthesis.agent = selected[0] ?? null;
+    }
+    if (
+      Array.isArray(config.synthesis.aggregators) &&
+      config.synthesis.aggregators.some((id) => !selected.includes(id))
+    ) {
+      config.synthesis.aggregators = config.synthesis.aggregators.filter((id) => selected.includes(id));
+    }
+    if (config.synthesis.meta_synthesizer && !selected.includes(config.synthesis.meta_synthesizer)) {
+      config.synthesis.meta_synthesizer = null;
     }
   }
 
@@ -112,9 +133,17 @@ export async function loadConfig(flags: CliFlags, cwd = process.cwd()): Promise<
   }
   if (flags.finalReview === false) config.final_review.enabled = false;
   if (flags.dryRun) config.dry_run = true;
+  if (flags.template) config.template = flags.template;
+  if (flags.templatesDir) config.templates_dir = flags.templatesDir;
   if (!explicitMaxTurns) {
     const intakeTurns = config.intake.enabled ? config.intake.max_questions * 2 + 2 : 0;
-    config.limits.max_turns = Math.max(12 + intakeTurns, config.agents.length * 4 + 4 + intakeTurns);
+    const aggregatorTurns = Array.isArray(config.synthesis.aggregators)
+      ? config.synthesis.aggregators.length + (config.synthesis.meta_synthesizer ? 1 : 0)
+      : 1;
+    config.limits.max_turns = Math.max(
+      14 + intakeTurns + aggregatorTurns,
+      config.agents.length * 4 + 4 + intakeTurns + aggregatorTurns
+    );
   }
 
   validateConfig(config);
@@ -126,16 +155,8 @@ export async function writeDefaultConfig(targetPath: string): Promise<void> {
   const config = {
     protocol: "agent-order/v1",
     agents: [
-      {
-        id: "codex",
-        adapter: "codex-cli",
-        command: "codex"
-      },
-      {
-        id: "claude",
-        adapter: "claude-cli",
-        command: "claude"
-      }
+      { id: "codex", adapter: "codex-cli", command: "codex", preset: "codex" },
+      { id: "claude", adapter: "claude-cli", command: "claude", preset: "claude" }
     ],
     limits: {
       max_turns: 12
@@ -144,7 +165,9 @@ export async function writeDefaultConfig(targetPath: string): Promise<void> {
       dir: "./agent-order-runs"
     },
     synthesis: {
-      agent: "codex"
+      agent: "codex",
+      aggregators: null,
+      meta_synthesizer: null
     },
     intake: {
       enabled: false,
@@ -159,7 +182,10 @@ export async function writeDefaultConfig(targetPath: string): Promise<void> {
     },
     final_review: {
       enabled: true
-    }
+    },
+    template: null,
+    templates_dir: null,
+    cost_warning_usd: 0
   };
 
   await fs.writeFile(targetPath, YAML.stringify(config), "utf8");
@@ -196,9 +222,7 @@ function mergeConfig<T>(base: T, override: unknown): T {
 }
 
 function inferAgentConfig(id: string): AgentConfig {
-  if (id === "codex") return { id, adapter: "codex-cli", command: "codex" };
-  if (id === "claude") return { id, adapter: "claude-cli", command: "claude" };
-  return { id, adapter: "generic-cli", command: id };
+  return resolvePresetAgent(id);
 }
 
 function validateConfig(config: CouncilConfig): void {
@@ -227,6 +251,17 @@ function validateConfig(config: CouncilConfig): void {
   const synthesizer = config.synthesis.agent ?? config.agents[0].id;
   if (!seen.has(synthesizer)) {
     throw new Error(`Synthesizer agent "${synthesizer}" is not in the agent roster.`);
+  }
+
+  if (Array.isArray(config.synthesis.aggregators)) {
+    for (const id of config.synthesis.aggregators) {
+      if (!seen.has(id)) {
+        throw new Error(`Aggregator agent "${id}" is not in the agent roster.`);
+      }
+    }
+  }
+  if (config.synthesis.meta_synthesizer && !seen.has(config.synthesis.meta_synthesizer)) {
+    throw new Error(`Meta-synthesizer agent "${config.synthesis.meta_synthesizer}" is not in the agent roster.`);
   }
 
   if (config.intake.enabled || config.intake.mode !== "off") {

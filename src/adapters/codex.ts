@@ -1,7 +1,15 @@
 import fs from "node:fs/promises";
 import { normalizeAgentOutput } from "../schema.js";
 import { commandForDisplay, runProcess } from "../process.js";
-import type { AdapterTurnOutput, AgentCheckResult, AgentConfig, AgentTurnInvocation, CouncilConfig, ProcessResult } from "../types.js";
+import type {
+  AdapterTurnOutput,
+  AgentCheckResult,
+  AgentConfig,
+  AgentTurnInvocation,
+  CostInfo,
+  CouncilConfig,
+  ProcessResult
+} from "../types.js";
 
 export async function runCodexTurn({ agent, config, prompt, schemaPath, outputPath, cwd }: AgentTurnInvocation): Promise<AdapterTurnOutput> {
   const options = {
@@ -35,13 +43,15 @@ export async function runCodexTurn({ agent, config, prompt, schemaPath, outputPa
   }
 
   const raw = await fs.readFile(outputPath, "utf8");
+  const cost = extractCostFromCodexOutput(processResult.stdout, processResult.stderr);
   return {
     result: normalizeAgentOutput(parseJsonOrText(raw)),
     process: {
       ...processResult,
       command: commandForDisplay(command, args)
     },
-    raw
+    raw,
+    cost
   };
 }
 
@@ -75,6 +85,24 @@ function parseJsonOrText(raw: string): unknown {
   } catch {
     return text;
   }
+}
+
+function extractCostFromCodexOutput(stdout: string, stderr: string): CostInfo | undefined {
+  const combined = `${stdout}\n${stderr}`;
+  const cost: CostInfo = {};
+  const tokenMatch = combined.match(/tokens?\s*(?:used|in\/out|in:\s*(\d+)\s*,\s*out:\s*(\d+))/i);
+  if (tokenMatch) {
+    const inTokens = Number(tokenMatch[1]);
+    const outTokens = Number(tokenMatch[2]);
+    if (Number.isFinite(inTokens)) cost.tokens_in = inTokens;
+    if (Number.isFinite(outTokens)) cost.tokens_out = outTokens;
+  }
+  const dollarMatch = combined.match(/\$(\d+\.\d{2,4})/);
+  if (dollarMatch) {
+    const amount = Number(dollarMatch[1]);
+    if (Number.isFinite(amount)) cost.cost_usd = amount;
+  }
+  return Object.keys(cost).length > 0 ? cost : undefined;
 }
 
 function formatFailure(agentId: string, command: string, args: string[], result: ProcessResult): string {
