@@ -1,6 +1,13 @@
 import { Chalk } from "chalk";
 import type { UserQuestion } from "./types.js";
 
+interface ActiveTurn {
+  id: string;
+  actor: string;
+  phase: string;
+  startedAt: number;
+}
+
 export interface TerminalTheme {
   heading(value: string): string;
   accent(value: string): string;
@@ -45,10 +52,12 @@ export function formatEvent(message: string, theme = createTerminalTheme()): str
 
 export function createTerminalReporter({
   output = process.stderr,
-  color = Boolean(process.stderr.isTTY)
+  color = Boolean(process.stderr.isTTY),
+  heartbeatMs = 15000
 }: {
   output?: NodeJS.WritableStream & { columns?: number; isTTY?: boolean };
   color?: boolean;
+  heartbeatMs?: number;
 } = {}) {
   const theme = createTerminalTheme({ color });
   const interactive = Boolean(output.isTTY);
@@ -58,7 +67,7 @@ export function createTerminalReporter({
   let timer: NodeJS.Timeout | null = null;
   let frame = 0;
   let verbIndex = 0;
-  let active: { id: string; actor: string; phase: string; startedAt: number } | null = null;
+  const activeTurns = new Map<string, ActiveTurn>();
   let lineVisible = false;
   let lastPhase: string | null = null;
   const headerIndent = "  ";
@@ -66,13 +75,14 @@ export function createTerminalReporter({
 
   function event(message: string): void {
     if (message.startsWith("Input requested:")) {
-      stopSpinner();
+      activeTurns.clear();
+      stopProgress();
       lastPhase = null;
       return;
     }
 
     if (message.startsWith("Run directory:")) {
-      stopSpinner();
+      stopProgress();
       const value = message.slice("Run directory:".length).trim();
       writeLine("");
       writeLine(`${headerIndent}${theme.muted("run")}  ${theme.accent(toRelativePath(value))}`);
@@ -80,42 +90,42 @@ export function createTerminalReporter({
     }
 
     if (message.startsWith("Template:")) {
-      stopSpinner();
+      stopProgress();
       const value = message.slice("Template:".length).trim();
       writeLine(`${headerIndent}${theme.muted("template")}  ${theme.accent(value)}`);
       return;
     }
 
     if (message.startsWith("Council preset:")) {
-      stopSpinner();
+      stopProgress();
       const value = message.slice("Council preset:".length).trim();
       writeLine(`${headerIndent}${theme.muted("council")}  ${theme.accent(value)}`);
       return;
     }
 
     if (message.startsWith("disagreement:")) {
-      stopSpinner();
+      stopProgress();
       const value = message.slice("disagreement:".length).trim();
       writeLine(`${bodyIndent}${theme.warning("⚡")}  ${theme.label("disagreement")}  ${theme.muted(value)}`);
       return;
     }
 
     if (message.startsWith("rubric:")) {
-      stopSpinner();
+      stopProgress();
       const value = message.slice("rubric:".length).trim();
       writeLine(`${bodyIndent}${theme.accent("◆")}  ${theme.label("rubric      ")}  ${theme.muted(value)}`);
       return;
     }
 
     if (message.startsWith("cost:")) {
-      stopSpinner();
+      stopProgress();
       const value = message.slice("cost:".length).trim();
       writeLine(`${bodyIndent}${theme.muted("$")}  ${theme.label("cost        ")}  ${theme.muted(value)}`);
       return;
     }
 
     if (message.startsWith("warning:")) {
-      stopSpinner();
+      stopProgress();
       const value = message.slice("warning:".length).trim();
       writeLine(`${bodyIndent}${theme.warning("!")}  ${theme.warning(value)}`);
       return;
@@ -123,45 +133,57 @@ export function createTerminalReporter({
 
     const turn = message.match(/^Turn\s+([^:]+):\s+(\S+)\s+(.+)$/);
     if (turn) {
-      stopSpinner();
       const [, id, actor, phase] = turn;
       writePhaseHeaderIfNew(phase);
-      active = { id, actor, phase, startedAt: Date.now() };
+      if (isInstantTurn(actor)) {
+        activeTurns.delete(id);
+        writeLine(`${bodyIndent}${theme.muted("·")}  ${theme.muted(id)}  ${theme.label(actor.padEnd(8))}  ${theme.muted(formatPhase(phase))}`);
+        syncProgressTimer();
+        return;
+      }
+
+      activeTurns.set(id, { id, actor, phase, startedAt: Date.now() });
       if (interactive) {
         renderSpinner();
-        timer = setInterval(renderSpinner, 100);
+      } else {
+        writeLine(`${bodyIndent}${theme.accent("…")}  ${theme.muted(id)}  ${theme.label(actor.padEnd(8))}  ${theme.muted("running")}`);
       }
+      syncProgressTimer();
       return;
     }
 
     const done = message.match(/^Done\s+([^:]+):\s+(\S+)\s+(.+)$/);
     if (done) {
       const [, id, actor, phase] = done;
-      const elapsed = active && active.id === id ? elapsedSeconds(active.startedAt) : "";
-      stopSpinner();
+      const active = activeTurns.get(id);
+      const elapsed = active ? elapsedSeconds(active.startedAt) : "";
+      activeTurns.delete(id);
       writePhaseHeaderIfNew(phase);
       writeLine(`${bodyIndent}${theme.success("✓")}  ${theme.muted(id)}  ${theme.label(actor.padEnd(8))}${elapsed ? `  ${theme.muted(elapsed)}` : ""}`);
-      active = null;
+      syncProgressTimer();
+      if (interactive && activeTurns.size > 0) renderSpinner();
       return;
     }
 
-    stopSpinner();
+    stopProgress();
     writeLine(formatEvent(message, theme));
   }
 
   function finish(): void {
-    stopSpinner();
+    activeTurns.clear();
+    stopProgress();
   }
 
   function finalPath(value: string): void {
-    stopSpinner();
+    activeTurns.clear();
+    stopProgress();
     writePhaseHeader("final report");
     writeLine(`${bodyIndent}${theme.accent("→")}  ${theme.accent(toRelativePath(value))}`);
     writeLine("");
   }
 
   function htmlPath(value: string): void {
-    stopSpinner();
+    stopProgress();
     writeLine(`${bodyIndent}${theme.accent("⌬")}  ${theme.accent(toRelativePath(value))}`);
   }
 
@@ -179,19 +201,38 @@ export function createTerminalReporter({
   }
 
   function renderSpinner(): void {
+    const active = firstActiveTurn();
     if (!active) return;
     const currentFrame = frames[frame % frames.length];
     const verb = verbs[Math.floor(verbIndex / 8) % verbs.length];
     frame += 1;
     verbIndex += 1;
     const elapsed = elapsedSeconds(active.startedAt);
-    const text = `${bodyIndent}${theme.accent(currentFrame)}  ${theme.muted(active.id)}  ${theme.label(active.actor.padEnd(8))}  ${theme.muted(verb)}  ${theme.muted(elapsed)}`;
+    const additional = activeTurns.size > 1 ? `  ${theme.muted(`+${activeTurns.size - 1} more`)}` : "";
+    const text = `${bodyIndent}${theme.accent(currentFrame)}  ${theme.muted(active.id)}  ${theme.label(active.actor.padEnd(8))}  ${theme.muted(verb)}  ${theme.muted(elapsed)}${additional}`;
     const line = truncateForTerminal(text, width);
     output.write(`\r\x1b[2K${line}`);
     lineVisible = true;
   }
 
-  function stopSpinner(): void {
+  function renderHeartbeat(): void {
+    const active = firstActiveTurn();
+    if (!active) return;
+    const additional = activeTurns.size > 1 ? `  +${activeTurns.size - 1} more` : "";
+    writeLine(`${bodyIndent}${theme.accent("…")}  ${theme.muted(active.id)}  ${theme.label(active.actor.padEnd(8))}  ${theme.muted("still running")}  ${theme.muted(elapsedSeconds(active.startedAt))}${theme.muted(additional)}`);
+  }
+
+  function syncProgressTimer(): void {
+    if (activeTurns.size === 0) {
+      stopProgress();
+      return;
+    }
+    if (timer) return;
+    timer = interactive ? setInterval(renderSpinner, 100) : setInterval(renderHeartbeat, heartbeatMs);
+    timer.unref?.();
+  }
+
+  function stopProgress(): void {
     if (timer) {
       clearInterval(timer);
       timer = null;
@@ -203,10 +244,18 @@ export function createTerminalReporter({
   }
 
   function writeLine(line: string): void {
+    if (lineVisible) {
+      output.write("\r\x1b[2K");
+      lineVisible = false;
+    }
     output.write(`${line}\n`);
   }
 
   return { event, finalPath, htmlPath, finish };
+
+  function firstActiveTurn(): ActiveTurn | null {
+    return activeTurns.values().next().value ?? null;
+  }
 }
 
 function toRelativePath(value: string): string {
@@ -278,6 +327,10 @@ export function formatPrompt({
 
 function formatPhase(phase: string): string {
   return phase.replace(/-/g, " ");
+}
+
+function isInstantTurn(actor: string): boolean {
+  return actor === "human" || actor === "orchestrator";
 }
 
 function elapsedSeconds(startedAt: number): string {

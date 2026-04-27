@@ -1,6 +1,6 @@
 {
   "name": "agent-order",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The Order of the Agents - multi-model deliberation for consequential decisions. Anonymized critique, aggregator synthesis, rubric-scored review, and shareable HTML decision artifacts.",
   "type": "module",
   "author": "Bilal Tahir",
