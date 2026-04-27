@@ -1,7 +1,7 @@
 {
   "name": "agent-order",
-  "version": "0.1.2",
-  "description": "The Order of the Agents — AI peer review for decisions that matter. Codex, Claude, and other agents deliberate, critique, and issue a decree.",
+  "version": "0.2.0",
+  "description": "The Order of the Agents - multi-model deliberation for consequential decisions. Anonymized critique, aggregator synthesis, rubric-scored review, and shareable HTML decision artifacts.",
   "type": "module",
   "author": "Bilal Tahir",
   "homepage": "https://github.com/btahir/agent-order#readme",
@@ -38,8 +38,10 @@
     "prepublishOnly": "npm run check",
     "pack:dry": "npm pack --dry-run",
     "check": "npm run build && node dist/bin/agent-order.js --help && node dist/bin/agent-order.js check --config examples/mock.config.yaml",
-    "demo": "npm run build && node dist/bin/agent-order.js \"Plan a saved-search feature for a project management app. Include UX, data model, API, rollout risks, and acceptance criteria.\" --config examples/mock.config.yaml --out .tmp/demo-runs --max-turns 9",
-    "smoke:real": "npm run build && node dist/bin/agent-order.js \"Plan a saved-search feature for a project management app. Include UX, data model, API, rollout risks, and acceptance criteria.\" --agents codex,claude --out .tmp/real-runs --max-turns 3 --human-input never --no-final-review"
+    "demo": "npm run build && node dist/bin/agent-order.js \"Plan a saved-search feature for a project management app. Include UX, data model, API, rollout risks, and acceptance criteria.\" --config examples/mock.config.yaml --out .tmp/demo-runs --max-turns 12",
+    "demo:prd": "npm run build && node dist/bin/agent-order.js prd ./docs/evals/scenarios/prd/saved-search/scenario.md --config examples/mock.config.yaml --out .tmp/demo-runs --max-turns 14",
+    "smoke:real": "npm run build && node dist/bin/agent-order.js \"Plan a saved-search feature for a project management app. Include UX, data model, API, rollout risks, and acceptance criteria.\" --agents codex,claude --out .tmp/real-runs --max-turns 3 --human-input never --no-final-review",
+    "eval": "npm run build && node dist/scripts/eval.js"
   },
   "dependencies": {
     "chalk": "^5.6.2",
