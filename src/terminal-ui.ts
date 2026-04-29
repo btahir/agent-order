@@ -8,6 +8,16 @@ interface ActiveTurn {
   startedAt: number;
 }
 
+interface ProgressHighlight {
+  id: string;
+  actor: string;
+  phase: string;
+  kind: string;
+  text: string;
+}
+
+type OutputBlock = "blank" | "event" | "phase" | "running" | "done" | "highlight";
+
 export interface TerminalTheme {
   heading(value: string): string;
   accent(value: string): string;
@@ -41,6 +51,11 @@ export function formatEvent(message: string, theme = createTerminalTheme()): str
     return `${theme.muted("run")}  ${theme.accent(toRelativePath(value))}`;
   }
 
+  const highlight = parseHighlight(message);
+  if (highlight) {
+    return formatHighlightBlock(highlight, theme, "  ", 88);
+  }
+
   const turn = message.match(/^Turn\s+([^:]+):\s+(\S+)\s+(.+)$/);
   if (turn) {
     const [, id, actor, phase] = turn;
@@ -70,6 +85,8 @@ export function createTerminalReporter({
   const activeTurns = new Map<string, ActiveTurn>();
   let lineVisible = false;
   let lastPhase: string | null = null;
+  let lastOutput: OutputBlock = "blank";
+  let lastHighlightTurnId: string | null = null;
   const headerIndent = "  ";
   const bodyIndent = "     ";
 
@@ -84,8 +101,9 @@ export function createTerminalReporter({
     if (message.startsWith("Run directory:")) {
       stopProgress();
       const value = message.slice("Run directory:".length).trim();
-      writeLine("");
+      writeBlankLine();
       writeLine(`${headerIndent}${theme.muted("run")}  ${theme.accent(toRelativePath(value))}`);
+      lastOutput = "event";
       return;
     }
 
@@ -93,6 +111,7 @@ export function createTerminalReporter({
       stopProgress();
       const value = message.slice("Template:".length).trim();
       writeLine(`${headerIndent}${theme.muted("template")}  ${theme.accent(value)}`);
+      lastOutput = "event";
       return;
     }
 
@@ -100,34 +119,53 @@ export function createTerminalReporter({
       stopProgress();
       const value = message.slice("Council preset:".length).trim();
       writeLine(`${headerIndent}${theme.muted("council")}  ${theme.accent(value)}`);
+      lastOutput = "event";
       return;
     }
 
     if (message.startsWith("disagreement:")) {
       stopProgress();
+      writeBlankLineAfterTurnGroup();
       const value = message.slice("disagreement:".length).trim();
       writeLine(`${bodyIndent}${theme.warning("⚡")}  ${theme.label("disagreement")}  ${theme.muted(value)}`);
+      lastOutput = "event";
+      return;
+    }
+
+    const highlight = parseHighlight(message);
+    if (highlight) {
+      stopProgress();
+      if (lastOutput === "highlight" && lastHighlightTurnId !== highlight.id) writeBlankLine();
+      writeLine(formatHighlightBlock(highlight, theme, bodyIndent, width));
+      lastOutput = "highlight";
+      lastHighlightTurnId = highlight.id;
       return;
     }
 
     if (message.startsWith("rubric:")) {
       stopProgress();
+      writeBlankLineAfterTurnGroup();
       const value = message.slice("rubric:".length).trim();
       writeLine(`${bodyIndent}${theme.accent("◆")}  ${theme.label("rubric      ")}  ${theme.muted(value)}`);
+      lastOutput = "event";
       return;
     }
 
     if (message.startsWith("cost:")) {
       stopProgress();
+      writeBlankLineAfterTurnGroup();
       const value = message.slice("cost:".length).trim();
       writeLine(`${bodyIndent}${theme.muted("$")}  ${theme.label("cost        ")}  ${theme.muted(value)}`);
+      lastOutput = "event";
       return;
     }
 
     if (message.startsWith("warning:")) {
       stopProgress();
+      writeBlankLineAfterTurnGroup();
       const value = message.slice("warning:".length).trim();
       writeLine(`${bodyIndent}${theme.warning("!")}  ${theme.warning(value)}`);
+      lastOutput = "event";
       return;
     }
 
@@ -137,7 +175,9 @@ export function createTerminalReporter({
       writePhaseHeaderIfNew(phase);
       if (isInstantTurn(actor)) {
         activeTurns.delete(id);
+        writeBlankLineAfterTurnGroup();
         writeLine(`${bodyIndent}${theme.muted("·")}  ${theme.muted(id)}  ${theme.label(actor.padEnd(8))}  ${theme.muted(formatPhase(phase))}`);
+        lastOutput = "done";
         syncProgressTimer();
         return;
       }
@@ -147,6 +187,7 @@ export function createTerminalReporter({
         renderSpinner();
       } else {
         writeLine(`${bodyIndent}${theme.accent("…")}  ${theme.muted(id)}  ${theme.label(actor.padEnd(8))}  ${theme.muted("running")}`);
+        lastOutput = "running";
       }
       syncProgressTimer();
       return;
@@ -159,14 +200,18 @@ export function createTerminalReporter({
       const elapsed = active ? elapsedSeconds(active.startedAt) : "";
       activeTurns.delete(id);
       writePhaseHeaderIfNew(phase);
+      writeBlankLineAfterTurnGroup();
       writeLine(`${bodyIndent}${theme.success("✓")}  ${theme.muted(id)}  ${theme.label(actor.padEnd(8))}${elapsed ? `  ${theme.muted(elapsed)}` : ""}`);
+      lastOutput = "done";
       syncProgressTimer();
       if (interactive && activeTurns.size > 0) renderSpinner();
       return;
     }
 
     stopProgress();
+    writeBlankLineAfterTurnGroup();
     writeLine(formatEvent(message, theme));
+    lastOutput = "event";
   }
 
   function finish(): void {
@@ -179,12 +224,13 @@ export function createTerminalReporter({
     stopProgress();
     writePhaseHeader("final report");
     writeLine(`${bodyIndent}${theme.accent("→")}  ${theme.accent(toRelativePath(value))}`);
-    writeLine("");
+    writeBlankLine();
   }
 
   function htmlPath(value: string): void {
     stopProgress();
     writeLine(`${bodyIndent}${theme.accent("⌬")}  ${theme.accent(toRelativePath(value))}`);
+    lastOutput = "event";
   }
 
   function writePhaseHeaderIfNew(phase: string): void {
@@ -195,9 +241,12 @@ export function createTerminalReporter({
   }
 
   function writePhaseHeader(label: string): void {
-    writeLine("");
+    writeBlankLine();
     writeLine(`${headerIndent}${theme.accent("▎")} ${theme.label(label)}`);
-    writeLine("");
+    lastOutput = "event";
+    writeBlankLine();
+    lastOutput = "phase";
+    lastHighlightTurnId = null;
   }
 
   function renderSpinner(): void {
@@ -249,6 +298,18 @@ export function createTerminalReporter({
       lineVisible = false;
     }
     output.write(`${line}\n`);
+  }
+
+  function writeBlankLine(): void {
+    if (lastOutput === "blank") return;
+    writeLine("");
+    lastOutput = "blank";
+  }
+
+  function writeBlankLineAfterTurnGroup(): void {
+    if (lastOutput === "running" || lastOutput === "done" || lastOutput === "highlight") {
+      writeBlankLine();
+    }
   }
 
   return { event, finalPath, htmlPath, finish };
@@ -331,6 +392,45 @@ function formatPhase(phase: string): string {
 
 function isInstantTurn(actor: string): boolean {
   return actor === "human" || actor === "orchestrator";
+}
+
+function parseHighlight(message: string): ProgressHighlight | null {
+  const match = message.match(/^highlight:\s+(\S+)\s+(\S+)\s+(\S+)\s+\|\s+([^|]+)\s+\|\s+([\s\S]+)$/);
+  if (!match) return null;
+  const [, id, actor, phase, kind, text] = match;
+  return { id, actor, phase, kind: kind.trim(), text: text.trim() };
+}
+
+function formatHighlightBlock(
+  highlight: ProgressHighlight,
+  theme: TerminalTheme,
+  indent: string,
+  width: number
+): string {
+  const marker = highlightMarker(highlight.kind, theme);
+  const textIndent = `${indent}   `;
+  const textWidth = Math.max(24, width - stripAnsi(textIndent).length);
+  const text = wrapText(highlight.text, textWidth, textIndent);
+  return [
+    `${indent}${marker}  ${theme.muted(highlight.id)}  ${theme.label(highlight.actor.padEnd(8))}  ${theme.muted(highlight.kind)}`,
+    theme.muted(text)
+  ].join("\n");
+}
+
+function highlightMarker(kind: string, theme: TerminalTheme): string {
+  switch (kind) {
+    case "disagreement":
+    case "risk":
+    case "rubric":
+      return theme.warning("!");
+    case "decision":
+    case "recommendation":
+      return theme.accent("◆");
+    case "revision":
+      return theme.accent("↻");
+    default:
+      return theme.muted("·");
+  }
 }
 
 function elapsedSeconds(startedAt: number): string {

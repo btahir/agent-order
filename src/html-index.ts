@@ -1,4 +1,5 @@
 import path from "node:path";
+import { collectDeliberationHighlights } from "./deliberation-highlights.js";
 import type { ArtifactTemplate, Objection, RubricScore, TurnRecord } from "./types.js";
 
 export interface HtmlIndexInput {
@@ -29,6 +30,7 @@ export function renderHtmlIndex(input: HtmlIndexInput): string {
   const css = baseCss();
   const header = renderHeader(input);
   const scenario = renderScenario(input.scenarioText, input.template);
+  const highlights = renderDeliberationHighlights(input.turns);
   const initial = renderInitialPositions(input.state.initial);
   const critiques = renderCritiqueMatrix(input.state.critiques, input.state.initial);
   const revisions = renderRevisions(input.state.initial, [
@@ -53,6 +55,7 @@ export function renderHtmlIndex(input: HtmlIndexInput): string {
     `<main class="run">`,
     header,
     scenario,
+    highlights,
     initial,
     critiques,
     revisions,
@@ -85,6 +88,20 @@ function renderHeader(input: HtmlIndexInput): string {
   lines.push(`<p>Final report: <a href="${escapeHtml(finalRel)}"><code>${escapeHtml(finalRel)}</code></a></p>`);
   lines.push(`</header>`);
   return lines.join("\n");
+}
+
+function renderDeliberationHighlights(turns: TurnRecord[]): string {
+  const highlights = collectDeliberationHighlights(turns, { perTurn: 2, max: 18 });
+  if (highlights.length === 0) {
+    return section("Deliberation highlights", "<p class='muted'>No structured highlights were reported.</p>");
+  }
+  const items = highlights
+    .map(
+      (highlight) =>
+        `<li><span class="highlight-kind kind-${escapeHtml(highlight.kind)}">${escapeHtml(highlight.kind)}</span><span><code>${escapeHtml(highlight.turnId)}</code> <strong>${escapeHtml(highlight.actor)}</strong> <span class="muted">${escapeHtml(highlight.phase)}</span><br>${escapeHtml(highlight.text)}</span></li>`
+    )
+    .join("");
+  return section("Deliberation highlights", `<ol class="highlights">${items}</ol>`);
 }
 
 function renderScenario(scenarioText: string, template: ArtifactTemplate | null): string {
@@ -388,10 +405,16 @@ ul.claims { list-style: none; padding: 0; margin: 0.4rem 0 0; }
 ul.claims li { padding: 0.25rem 0; border-bottom: 1px dashed var(--border); font-size: 0.9rem; }
 ul.objections { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
 ul.objections li { padding: 0.2rem 0; }
+.highlights { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0.55rem; }
+.highlights li { display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.75rem; align-items: start; padding: 0.65rem 0; border-bottom: 1px dashed var(--border); }
+.highlight-kind { width: max-content; font-size: 0.72rem; padding: 0.12rem 0.45rem; border-radius: 999px; background: var(--code); color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .kind { font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 999px; background: var(--code); color: var(--muted); margin-right: 0.4rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .kind-recommendation { background: rgba(37, 99, 235, 0.12); color: var(--accent); }
+.kind-decision { background: rgba(37, 99, 235, 0.12); color: var(--accent); }
 .kind-risk { background: rgba(220, 38, 38, 0.12); color: var(--fail); }
+.kind-disagreement, .kind-rubric { background: rgba(220, 38, 38, 0.12); color: var(--fail); }
 .kind-assumption { background: rgba(245, 158, 11, 0.15); color: #b45309; }
+.kind-revision { background: rgba(22, 163, 74, 0.12); color: var(--pass); }
 .severity { font-size: 0.72rem; padding: 0.05rem 0.35rem; border-radius: 999px; margin-right: 0.35rem; font-weight: 600; }
 .sev-blocking { background: rgba(220, 38, 38, 0.18); color: var(--fail); }
 .sev-major { background: rgba(245, 158, 11, 0.18); color: #b45309; }

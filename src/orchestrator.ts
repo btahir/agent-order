@@ -7,6 +7,7 @@ import { writeText } from "./fs-utils.js";
 import { loadTemplate } from "./templates/index.js";
 import { buildAnonymizationView, buildSimpleAnonymization, decorateTurnsWithLabels } from "./anonymize.js";
 import { renderHtmlIndex } from "./html-index.js";
+import { collectDeliberationHighlights, formatHighlightEvent, highlightsForTurn } from "./deliberation-highlights.js";
 import type {
   AgentConfig,
   AgentTurnResult,
@@ -675,6 +676,7 @@ async function executeAgentTurn({
     });
     await store.appendTrace({ type: "turn.completed", turn: turn.id, dry_run: true });
     onEvent(`Done ${turn.id}: ${spec.agent.id} ${spec.phase}`);
+    emitTurnHighlights(turn, onEvent);
     return turn;
   }
 
@@ -716,6 +718,7 @@ async function executeAgentTurn({
     cost: cost ?? null
   });
   onEvent(`Done ${turn.id}: ${spec.agent.id} ${spec.phase}`);
+  emitTurnHighlights(turn, onEvent);
 
   return turn;
 }
@@ -1034,6 +1037,12 @@ async function askWithEvent({
   return askUser(input);
 }
 
+function emitTurnHighlights(turn: TurnRecord, onEvent: (message: string) => void): void {
+  for (const highlight of highlightsForTurn(turn, 2)) {
+    onEvent(formatHighlightEvent(highlight));
+  }
+}
+
 async function writeHumanAnswersTurn({
   store,
   turnNumber,
@@ -1219,6 +1228,16 @@ async function writeDecisionLog(
   for (const turn of store.sortedTurns) {
     const cost = turn.cost?.cost_usd ? ` ($${turn.cost.cost_usd.toFixed(4)})` : "";
     lines.push(`- ${turn.id} ${turn.actor}.${turn.phase}: ${turn.summary}${cost}`);
+  }
+
+  const highlights = collectDeliberationHighlights(store.sortedTurns, { perTurn: 2, max: 18 });
+  lines.push("", "## Deliberation Highlights", "");
+  if (highlights.length === 0) {
+    lines.push("No structured highlights were reported.");
+  } else {
+    for (const highlight of highlights) {
+      lines.push(`- ${highlight.turnId} ${highlight.actor}.${highlight.phase} ${highlight.kind}: ${highlight.text}`);
+    }
   }
 
   lines.push("", "## Final Review Rubric", "");
